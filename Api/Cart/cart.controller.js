@@ -1,7 +1,7 @@
 const CartModal = require("./cartModal");
 const Product = require("../product/ProductModal");
 const asyncHandler = require("express-async-handler");
-const OrderModal = require("../order/OrderModal");
+const OrderModal = require("../order/orderModal");
 const uniqid = require("uniqid");
 const User = require("../access/UserModal");
 
