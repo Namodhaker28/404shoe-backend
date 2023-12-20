@@ -10,6 +10,7 @@ const authentication = AsyncHandler(async (req, res, next) => {
     else {
       const token = req?.headers?.authorization?.split(" ")[1];
       const tokenObj = jwt.verify(token, process.env.JWT_KEY);
+      console.log("tokenObj",tokenObj)
       if (tokenObj) {
         const user = userSchema.findById(tokenObj.id);
         req.user = user;
@@ -19,6 +20,7 @@ const authentication = AsyncHandler(async (req, res, next) => {
       next();
     }
   } catch (error) {
+    console.log("tokenObj")
     throw error;
   }
 });
@@ -34,4 +36,3 @@ const authentication = AsyncHandler(async (req, res, next) => {
 
 module.exports = authentication;
 // module.exports = isAdmin;
-

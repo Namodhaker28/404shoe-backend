@@ -84,7 +84,7 @@ class AccessController {
 
       res.status(200).json({ accessToken: generateAccessToken(user._id) });
     } catch (error) {
-      console.log(error);
+      // console.log(error);
       throw error;
     }
   });
