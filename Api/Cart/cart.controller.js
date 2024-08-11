@@ -4,6 +4,7 @@ const asyncHandler = require("express-async-handler");
 const OrderModal = require("../order/orderModal");
 const uniqid = require("uniqid");
 const User = require("../access/UserModal");
+const { CustomError } = require("../../utils/customError");
 
 require("dotenv").config();
 
@@ -15,20 +16,23 @@ class cartController {
     try {
       let products = [];
       const existCart = await CartModal.findOne({ orderBy: user._id });
+      const isProductExist = existCart.products.some((item) => item.product == cart.product);
+      console.log(isProductExist);
+      if (isProductExist) {
+        return next(new CustomError(400, "Product already in cart"));
+      }
 
-      let price = await Product.findById({ _id: cart.product })
-        .select("price")
-        .exec();
+      let price = await Product.findById({ _id: cart.product }).select("price").exec();
       cart.price = price.price;
 
       if (existCart) {
         existCart.products.push(cart);
         existCart.cartTotal = existCart.cartTotal + cart.price * cart.count;
-        const newCart = await CartModal.findOneAndUpdate(
-          { orderBy: user._id },
-          existCart,
-          { new: true }
-        );
+        const newCart = await CartModal.findOneAndUpdate({ orderBy: user._id }, existCart, {
+          new: true,
+        })
+          .populate("orderBy")
+          .exec();
         res.json(newCart);
       } else {
         products.push(cart);
@@ -37,7 +41,10 @@ class cartController {
           products,
           cartTotal,
           orderBy: user._id,
-        }).save();
+        })
+          .save()
+          .populate("orderBy")
+          .exec();
         res.json(newCart);
       }
 
@@ -56,17 +63,11 @@ class cartController {
     let price = await Product.findById({ _id: id }).select("price").exec();
     existCart.cartTotal = existCart.cartTotal - price.price;
 
-    existCart.products = existCart.products.filter(
-      (product) => product.product != id
-    );
+    existCart.products = existCart.products.filter((product) => product.product != id);
 
-    const newCart = await CartModal.findByIdAndUpdate(
-      existCart._id,
-      existCart,
-      {
-        new: true,
-      }
-    );
+    const newCart = await CartModal.findByIdAndUpdate(existCart._id, existCart, {
+      new: true,
+    });
 
     const updatedCart = user.cart.filter((cart) => cart !== id);
     user.cart = updatedCart;
@@ -82,8 +83,9 @@ class cartController {
         .populate("products.product")
         .exec();
       // console.log("cartt", cart);
-      res.json(cart);
+      res.status(200).json(cart);
     } catch (error) {
+      console.log(error)
       throw new Error(error);
     }
   });

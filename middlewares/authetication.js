@@ -1,6 +1,7 @@
 var jwt = require("jsonwebtoken");
 const userSchema = require("../Api/access/UserModal");
 const AsyncHandler = require("express-async-handler");
+const { CustomError } = require("../utils/customError");
 require("dotenv").config();
 
 const authentication = AsyncHandler(async (req, res, next) => {
@@ -10,18 +11,16 @@ const authentication = AsyncHandler(async (req, res, next) => {
     else {
       const token = req?.headers?.authorization?.split(" ")[1];
       const tokenObj = jwt.verify(token, process.env.JWT_KEY);
-      console.log("tokenObj",tokenObj)
       if (tokenObj) {
         const user = userSchema.findById(tokenObj.id);
         req.user = user;
       } else {
-        throw new Error("Invalid token");
+        throw new CustomError(400, "Invalid token");
       }
       next();
     }
   } catch (error) {
-    console.log("tokenObj")
-    throw error;
+    throw new CustomError(401, "UnAuthorized Access");
   }
 });
 

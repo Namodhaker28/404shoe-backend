@@ -7,6 +7,7 @@ const productRouter = require('./Api/product/product.routes');
 const cartRouter = require('./Api/Cart/cart.routes');
 const { errorHandler, notFound } = require("./middlewares/errorHandlers");
 var cors = require("cors");
+const errorMiddleware = require("./middlewares/customErrorHandler");
 
 require("dotenv").config();
 
@@ -16,6 +17,7 @@ const app = express();
 app.use(cookieParser());
 app.use(cors());
 app.use(bodyParser.json());
+
 
 
 const port = process.env.PORT;
@@ -31,9 +33,9 @@ myRouter.get("/", (req, res) => {
 app.use('/api/v1',accessRouter,productRouter,cartRouter)
 // app.use('/api/v1',productRouter)
 
-app.use(errorHandler)
+// app.use(errorHandler)
 app.use(notFound)
-
+app.use(errorMiddleware);
 
 
 
