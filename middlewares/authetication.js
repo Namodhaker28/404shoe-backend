@@ -6,21 +6,38 @@ require("dotenv").config();
 
 const authentication = AsyncHandler(async (req, res, next) => {
   try {
-    if (!req?.headers?.authorization?.startsWith("Bearer "))
-      throw new Error("No authorization present in headers");
-    else {
-      const token = req?.headers?.authorization?.split(" ")[1];
-      const tokenObj = jwt.verify(token, process.env.JWT_KEY);
-      if (tokenObj) {
-        const user = userSchema.findById(tokenObj.id);
-        req.user = user;
-      } else {
-        throw new CustomError(400, "Invalid token");
-      }
-      next();
+    if (!req?.headers?.authorization?.startsWith("Bearer ")) {
+      throw new CustomError(401, "No authorization token provided");
     }
+    
+    const token = req?.headers?.authorization?.split(" ")[1];
+    if (!token) {
+      throw new CustomError(401, "No token found in authorization header");
+    }
+    
+    const tokenObj = jwt.verify(token, process.env.JWT_KEY);
+    if (!tokenObj || !tokenObj.id) {
+      throw new CustomError(401, "Invalid token");
+    }
+    
+    const user = await userSchema.findById(tokenObj.id);
+    if (!user) {
+      throw new CustomError(401, "User not found");
+    }
+    
+    req.user = user;
+    next();
   } catch (error) {
-    throw new CustomError(401, "UnAuthorized Access");
+    // If it's already a CustomError, re-throw it
+    if (error instanceof CustomError) {
+      throw error;
+    }
+    // Handle JWT errors
+    if (error.name === "JsonWebTokenError" || error.name === "TokenExpiredError") {
+      throw new CustomError(401, "Invalid or expired token");
+    }
+    // Default to unauthorized
+    throw new CustomError(401, "Unauthorized Access");
   }
 });
 

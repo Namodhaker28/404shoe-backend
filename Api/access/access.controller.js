@@ -1,4 +1,5 @@
 const userSchema = require("./UserModal");
+const Address = require("./AddressModal");
 const bcrypt = require("bcryptjs");
 const asyncHandler = require("express-async-handler");
 var jwt = require("jsonwebtoken");
@@ -146,14 +147,244 @@ class AccessController {
     res.json({ message: "User deleted successfully", data: user });
   });
 
+  /**
+   * Add new address (legacy - for backward compatibility)
+   * @deprecated Use addNewAddress instead
+   */
   addAddress = asyncHandler(async (req, res, next) => {
-    const { _id } = await req.user;
+    const user = await req.user;
     const updatedUser = await userSchema.findByIdAndUpdate(
-      _id,
+      user._id,
       { address: req.body.address },
       { new: true }
     );
     res.json(updatedUser);
+  });
+
+  /**
+   * Create a new address for the user
+   * POST /api/addresses
+   */
+  addNewAddress = asyncHandler(async (req, res, next) => {
+    try {
+      const user = await req.user;
+      const {
+        label,
+        fullName,
+        phone,
+        streetAddress,
+        streetAddress2,
+        city,
+        state,
+        postalCode,
+        country,
+        isDefault,
+        type,
+      } = req.body;
+
+      // Validate required fields
+      if (!fullName || !phone || !streetAddress || !city || !state || !postalCode) {
+        throw new CustomError(400, "Missing required address fields");
+      }
+
+      // If this is set as default, unset other defaults
+      if (isDefault) {
+        await Address.updateMany(
+          { user: user._id },
+          { isDefault: false }
+        );
+      }
+
+      // Create new address
+      const newAddress = await Address.create({
+        user: user._id,
+        label: label || "Home",
+        fullName,
+        phone,
+        streetAddress,
+        streetAddress2: streetAddress2 || "",
+        city,
+        state,
+        postalCode,
+        country: country || "United States",
+        isDefault: isDefault || false,
+        type: type || "home",
+      });
+
+      res.status(201).json({
+        success: true,
+        message: "Address added successfully",
+        address: newAddress,
+      });
+    } catch (error) {
+      if (error instanceof CustomError) {
+        throw error;
+      }
+      throw new CustomError(500, error.message || "Failed to add address");
+    }
+  });
+
+  /**
+   * Get all addresses for the logged-in user
+   * GET /api/addresses
+   */
+  getUserAddresses = asyncHandler(async (req, res, next) => {
+    try {
+      const user = await req.user;
+      const addresses = await Address.find({ user: user._id }).sort({
+        isDefault: -1,
+        createdAt: -1,
+      });
+
+      res.json({
+        success: true,
+        addresses,
+      });
+    } catch (error) {
+      throw new CustomError(500, error.message || "Failed to fetch addresses");
+    }
+  });
+
+  /**
+   * Get a single address by ID
+   * GET /api/addresses/:id
+   */
+  getAddressById = asyncHandler(async (req, res, next) => {
+    try {
+      const user = await req.user;
+      const { id } = req.params;
+
+      const address = await Address.findOne({ _id: id, user: user._id });
+
+      if (!address) {
+        throw new CustomError(404, "Address not found");
+      }
+
+      res.json({
+        success: true,
+        address,
+      });
+    } catch (error) {
+      if (error instanceof CustomError) {
+        throw error;
+      }
+      throw new CustomError(500, error.message || "Failed to fetch address");
+    }
+  });
+
+  /**
+   * Update an address
+   * PUT /api/addresses/:id
+   */
+  updateAddress = asyncHandler(async (req, res, next) => {
+    try {
+      const user = await req.user;
+      const { id } = req.params;
+      const updateData = req.body;
+
+      // Find address and verify ownership
+      const address = await Address.findOne({ _id: id, user: user._id });
+
+      if (!address) {
+        throw new CustomError(404, "Address not found");
+      }
+
+      // If setting as default, unset other defaults
+      if (updateData.isDefault && !address.isDefault) {
+        await Address.updateMany(
+          { user: user._id, _id: { $ne: id } },
+          { isDefault: false }
+        );
+      }
+
+      // Update address
+      const updatedAddress = await Address.findByIdAndUpdate(
+        id,
+        updateData,
+        { new: true, runValidators: true }
+      );
+
+      res.json({
+        success: true,
+        message: "Address updated successfully",
+        address: updatedAddress,
+      });
+    } catch (error) {
+      if (error instanceof CustomError) {
+        throw error;
+      }
+      throw new CustomError(500, error.message || "Failed to update address");
+    }
+  });
+
+  /**
+   * Delete an address
+   * DELETE /api/addresses/:id
+   */
+  deleteAddress = asyncHandler(async (req, res, next) => {
+    try {
+      const user = await req.user;
+      const { id } = req.params;
+
+      const address = await Address.findOne({ _id: id, user: user._id });
+
+      if (!address) {
+        throw new CustomError(404, "Address not found");
+      }
+
+      await Address.findByIdAndDelete(id);
+
+      res.json({
+        success: true,
+        message: "Address deleted successfully",
+      });
+    } catch (error) {
+      if (error instanceof CustomError) {
+        throw error;
+      }
+      throw new CustomError(500, error.message || "Failed to delete address");
+    }
+  });
+
+  /**
+   * Set an address as default
+   * PUT /api/addresses/:id/set-default
+   */
+  setDefaultAddress = asyncHandler(async (req, res, next) => {
+    try {
+      const user = await req.user;
+      const { id } = req.params;
+
+      const address = await Address.findOne({ _id: id, user: user._id });
+
+      if (!address) {
+        throw new CustomError(404, "Address not found");
+      }
+
+      // Unset all other defaults
+      await Address.updateMany(
+        { user: user._id, _id: { $ne: id } },
+        { isDefault: false }
+      );
+
+      // Set this address as default
+      const updatedAddress = await Address.findByIdAndUpdate(
+        id,
+        { isDefault: true },
+        { new: true }
+      );
+
+      res.json({
+        success: true,
+        message: "Default address updated",
+        address: updatedAddress,
+      });
+    } catch (error) {
+      if (error instanceof CustomError) {
+        throw error;
+      }
+      throw new CustomError(500, error.message || "Failed to set default address");
+    }
   });
 
   addToWishlist = asyncHandler(async (req, res, next) => {

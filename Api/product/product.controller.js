@@ -60,10 +60,36 @@ class ProductController {
   getAllProducts = asyncHandler(async (req, res) => {
     try {
       //filter products
-
       const queryObj = { ...req.query };
       const excludeQuery = ["page", "limit", "sort", "fields"];
       excludeQuery.forEach((field) => delete queryObj[field]);
+
+      // Handle array fields (tags and color) - convert to MongoDB $in operator
+      if (req.query.tags) {
+        const tagsArray = Array.isArray(req.query.tags) ? req.query.tags : [req.query.tags];
+        queryObj.tags = { $in: tagsArray };
+      }
+
+      if (req.query.color) {
+        const colorArray = Array.isArray(req.query.color) ? req.query.color : [req.query.color];
+        queryObj.color = { $in: colorArray };
+      }
+
+      // Handle price range filters
+      if (req.query["price[gte]"] || req.query["price[lte]"]) {
+        queryObj.price = {};
+        if (req.query["price[gte]"]) {
+          queryObj.price.$gte = parseFloat(req.query["price[gte]"]);
+        }
+        if (req.query["price[lte]"]) {
+          queryObj.price.$lte = parseFloat(req.query["price[lte]"]);
+        }
+      }
+
+      // Remove price range query params from main query object
+      delete queryObj["price[gte]"];
+      delete queryObj["price[lte]"];
+
       let queryString = JSON.stringify(queryObj);
       queryString = queryString.replace(
         /\b(gte|lte|gt|lt)\b/g,

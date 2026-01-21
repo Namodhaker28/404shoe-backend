@@ -11,7 +11,9 @@ var cartSchema = new mongoose.Schema({
       count : Number,
       color:String,
       price:Number,
-      size:Number
+      size: {
+        type: mongoose.Schema.Types.Mixed, // Accept both String and Number (e.g., "S", "M", "L" or 8, 9.5)
+      }
     },
   ],
   cartTotal: {type:Number},

@@ -14,66 +14,121 @@ class cartController {
     const cart = req.body;
 
     try {
-      let products = [];
-      const existCart = await CartModal.findOne({ orderBy: user._id });
-      const isProductExist = existCart.products.some((item) => item.product == cart.product);
-      console.log(isProductExist);
-      if (isProductExist) {
-        return next(new CustomError(400, "Product already in cart"));
+      // Validate product exists and get price
+      const product = await Product.findById(cart.product).select("price").exec();
+      if (!product) {
+        throw new CustomError(404, "Product not found");
       }
 
-      let price = await Product.findById({ _id: cart.product }).select("price").exec();
-      cart.price = price.price;
+      // Get or create cart
+      let existCart = await CartModal.findOne({ orderBy: user._id });
+      
+      // Check if product already exists in cart
+      if (existCart) {
+        const isProductExist = existCart.products.some((item) => item.product.toString() === cart.product);
+        if (isProductExist) {
+          throw new CustomError(400, "Product already in cart");
+        }
+      }
+
+      // Set cart item price
+      cart.price = product.price;
 
       if (existCart) {
+        // Update existing cart
         existCart.products.push(cart);
         existCart.cartTotal = existCart.cartTotal + cart.price * cart.count;
-        const newCart = await CartModal.findOneAndUpdate({ orderBy: user._id }, existCart, {
-          new: true,
-        })
+        const newCart = await CartModal.findOneAndUpdate(
+          { orderBy: user._id },
+          existCart,
+          { new: true }
+        )
           .populate("orderBy")
+          .populate("products.product")
           .exec();
-        res.json(newCart);
+        
+        // Update user cart array
+        if (!user.cart.includes(cart.product)) {
+          user.cart.push(cart.product);
+          await User.findByIdAndUpdate(user._id, { cart: user.cart });
+        }
+        
+        res.status(200).json(newCart);
       } else {
-        products.push(cart);
-        let cartTotal = cart.price * cart.count;
+        // Create new cart
+        const products = [cart];
+        const cartTotal = cart.price * cart.count;
         const newCart = await new CartModal({
           products,
           cartTotal,
           orderBy: user._id,
         })
           .save()
-          .populate("orderBy")
-          .exec();
-        res.json(newCart);
+          .then(cart => CartModal.findById(cart._id).populate("orderBy").populate("products.product").exec());
+        
+        // Update user cart array
+        user.cart.push(cart.product);
+        await User.findByIdAndUpdate(user._id, { cart: user.cart });
+        
+        res.status(201).json(newCart);
       }
-
-      user.cart.push(cart.product);
-      await User.findByIdAndUpdate(user._id, user);
     } catch (error) {
-      throw new Error(error);
+      // Re-throw CustomError as-is, wrap other errors
+      if (error instanceof CustomError) {
+        throw error;
+      }
+      throw new CustomError(500, error.message || "Failed to add product to cart");
     }
   });
 
   removeFromCart = asyncHandler(async (req, res) => {
     const user = await req.user;
     const { id } = req.params;
-    const existCart = await CartModal.findOne({ orderBy: user._id });
+    
+    try {
+      const existCart = await CartModal.findOne({ orderBy: user._id });
+      
+      if (!existCart) {
+        throw new CustomError(404, "Cart not found");
+      }
 
-    let price = await Product.findById({ _id: id }).select("price").exec();
-    existCart.cartTotal = existCart.cartTotal - price.price;
+      // Find the product in cart to get its price
+      const cartItem = existCart.products.find((item) => item.product.toString() === id);
+      if (!cartItem) {
+        throw new CustomError(404, "Product not found in cart");
+      }
 
-    existCart.products = existCart.products.filter((product) => product.product != id);
+      // Calculate new total
+      const itemTotal = cartItem.price * cartItem.count;
+      existCart.cartTotal = Math.max(0, existCart.cartTotal - itemTotal);
 
-    const newCart = await CartModal.findByIdAndUpdate(existCart._id, existCart, {
-      new: true,
-    });
+      // Remove product from cart
+      existCart.products = existCart.products.filter((product) => product.product.toString() !== id);
 
-    const updatedCart = user.cart.filter((cart) => cart !== id);
-    user.cart = updatedCart;
+      // Update cart
+      const newCart = await CartModal.findByIdAndUpdate(
+        existCart._id,
+        existCart,
+        { new: true }
+      )
+        .populate("orderBy")
+        .populate("products.product")
+        .exec();
 
-    await User.findByIdAndUpdate(user._id, user);
-    res.status(200).json({ newCart: newCart, updatedUser: user });
+      // Update user cart array
+      const updatedCart = user.cart.filter((cartId) => cartId.toString() !== id);
+      await User.findByIdAndUpdate(user._id, { cart: updatedCart });
+
+      // Get updated user
+      const updatedUser = await User.findById(user._id);
+
+      res.status(200).json({ newCart: newCart, updatedUser: updatedUser });
+    } catch (error) {
+      if (error instanceof CustomError) {
+        throw error;
+      }
+      throw new CustomError(500, error.message || "Failed to remove product from cart");
+    }
   });
 
   getUserCart = asyncHandler(async (req, res) => {
@@ -81,12 +136,22 @@ class cartController {
     try {
       const cart = await CartModal.findOne({ orderBy: user._id })
         .populate("products.product")
+        .populate("orderBy")
         .exec();
-      // console.log("cartt", cart);
+      
+      // Return empty cart structure if no cart exists
+      if (!cart) {
+        return res.status(200).json({
+          products: [],
+          cartTotal: 0,
+          orderBy: user._id
+        });
+      }
+      
       res.status(200).json(cart);
     } catch (error) {
-      console.log(error)
-      throw new Error(error);
+      console.log(error);
+      throw new CustomError(500, error.message || "Failed to fetch cart");
     }
   });
 
